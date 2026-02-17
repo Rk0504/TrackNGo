@@ -1,0 +1,6 @@
+{
+  "appId": "com.trackngo.app",
+  "appName": "TrackNGo",
+  "webDir": "dist",
+  "bundledWebRuntime": false
+}

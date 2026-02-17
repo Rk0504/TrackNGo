@@ -1,0 +1,16 @@
+{
+    "short_name": "TrackNGo",
+    "name": "TrackNGo Bus",
+    "start_url": ".",
+    "display": "standalone",
+    "theme_color": "#2563eb",
+    "background_color": "#f3f4f6",
+    "icons": [
+        {
+            "src": "/icon.svg",
+            "sizes": "512x512",
+            "purpose": "any maskable",
+            "type": "image/svg+xml"
+        }
+    ]
+}

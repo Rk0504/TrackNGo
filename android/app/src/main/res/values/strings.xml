@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">TrackNGo</string>
+    <string name="title_activity_main">TrackNGo</string>
+    <string name="package_name">com.trackngo.app</string>
+    <string name="custom_url_scheme">com.trackngo.app</string>
+</resources>
