@@ -198,7 +198,7 @@ function Sidebar() {
                               <span className="text-xs font-medium text-gray-600">{Math.round(bus.speed || 0)} km/h</span>
                             </div>
                             <div className="flex items-center space-x-1.5">
-                              <div className={`w-1.5 h-1.5 rounded-full ${bus.safety_score >= 90 ? 'bg-green-500' : 'bg-red-500'}`}></div>
+                              <div className={`w-1.5 h-1.5 rounded-full ${(bus.safety_score ?? 100) >= 90 ? 'bg-green-500' : 'bg-red-500'}`}></div>
                               <span className="text-xs font-medium text-gray-600">Safety: {bus.safety_score ?? 100}</span>
                             </div>
                           </div>
@@ -219,10 +219,10 @@ function Sidebar() {
                               return (
                                 <div key={index} className="relative flex items-center space-x-3 py-1.5 group/stop">
                                   <div className={`w-3 h-3 rounded-full border-2 z-10 flex-shrink-0 ${isCurrent
-                                      ? 'bg-primary-500 border-primary-200 ring-2 ring-primary-100'
-                                      : isPast
-                                        ? 'bg-gray-300 border-gray-100'
-                                        : 'bg-white border-gray-300'
+                                    ? 'bg-primary-500 border-primary-200 ring-2 ring-primary-100'
+                                    : isPast
+                                      ? 'bg-gray-300 border-gray-100'
+                                      : 'bg-white border-gray-300'
                                     }`}></div>
                                   <div className="flex-1 min-w-0">
                                     <div className={`text-xs truncate ${isCurrent ? 'font-bold text-gray-900' : isPast ? 'text-gray-400 line-through' : 'text-gray-600'}`}>

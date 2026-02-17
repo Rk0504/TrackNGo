@@ -157,7 +157,8 @@ function sanitizeGpsData(data) {
     bus_id: String(data.bus_id).trim(),
     lat: parseFloat(data.lat),
     lng: parseFloat(data.lng),
-    timestamp: data.timestamp ? parseInt(data.timestamp) : Math.floor(Date.now() / 1000)
+    timestamp: data.timestamp ? parseInt(data.timestamp) : Math.floor(Date.now() / 1000),
+    timestamp_ms: data.timestamp_ms ? parseInt(data.timestamp_ms) : Date.now()
   };
 
   // Add optional fields if valid

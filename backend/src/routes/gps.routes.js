@@ -66,7 +66,8 @@ router.post('/update', async (req, res) => {
     const safetyResult = safetyService.processSafetyScore(
       validation.data.bus_id,
       validation.data.speed || 0,
-      validation.data.timestamp
+      validation.data.timestamp,
+      validation.data.timestamp_ms // Pass high-precision timestamp
     );
 
     // Attach score to bus data
@@ -158,6 +159,8 @@ router.post('/update', async (req, res) => {
       timestamp: updateResult.bus.timestamp,
       eta: updateResult.bus.eta || null,
       nextStop: updateResult.bus.nextStop || null,
+      safety_score: updateResult.bus.safety_score,
+      violations: updateResult.bus.violations || [],
       processingTime: `${processingTime}ms`
     });
 

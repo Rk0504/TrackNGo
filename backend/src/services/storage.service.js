@@ -16,11 +16,11 @@ class StorageService {
     // Active bus locations with latest GPS data
     // Key: bus_id, Value: { bus_id, lat, lng, speed, route_id, timestamp, eta }
     this.buses = new Map();
-    
+
     // Connection tracking for cleanup
     // Key: bus_id, Value: { lastSeen, connectionCount }
     this.busConnections = new Map();
-    
+
     // Performance metrics
     this.stats = {
       totalUpdates: 0,
@@ -30,7 +30,7 @@ class StorageService {
     };
 
     console.log('✅ In-memory storage service initialized');
-    
+
     // Start cleanup interval for stale buses
     this.startCleanupInterval();
   }
@@ -39,8 +39,8 @@ class StorageService {
    * Update bus location and trigger real-time broadcasts
    */
   updateBusLocation(busData) {
-    const { bus_id, lat, lng, speed, route_id, timestamp } = busData;
-    
+    const { bus_id, lat, lng, speed, route_id, timestamp, safety_score, violations } = busData;
+
     try {
       // Validate required fields
       if (!bus_id || lat === undefined || lng === undefined) {
@@ -66,12 +66,14 @@ class StorageService {
         route_id: route_id || null,
         timestamp: providedTimestamp,
         lastUpdate: new Date().toISOString(),
-        eta: null // Will be calculated by ETA service
+        eta: null, // Will be calculated by ETA service
+        safety_score: safety_score || 100,
+        violations: violations || []
       };
 
       // Store in memory
       this.buses.set(bus_id, updatedBus);
-      
+
       // Update connection tracking
       this.busConnections.set(bus_id, {
         lastSeen: currentTime,
@@ -83,7 +85,7 @@ class StorageService {
       this.stats.lastUpdateTime = new Date();
 
       console.log(`📍 Updated location for bus ${bus_id} at (${lat}, ${lng})`);
-      
+
       return { success: true, bus: updatedBus };
 
     } catch (error) {
@@ -119,7 +121,7 @@ class StorageService {
   getBusesByRoute(routeId) {
     const routeBuses = Array.from(this.buses.values())
       .filter(bus => bus.route_id === routeId);
-    
+
     console.log(`🚌 Found ${routeBuses.length} buses on route ${routeId}`);
     return routeBuses;
   }
@@ -130,11 +132,11 @@ class StorageService {
   removeBus(busId) {
     const removed = this.buses.delete(busId);
     this.busConnections.delete(busId);
-    
+
     if (removed) {
       console.log(`🗑️  Removed bus ${busId} from active tracking`);
     }
-    
+
     return removed;
   }
 
@@ -144,7 +146,7 @@ class StorageService {
   getStats() {
     const now = new Date();
     const uptimeMs = now - this.stats.startTime;
-    
+
     return {
       ...this.stats,
       activeBuses: this.buses.size,
@@ -177,7 +179,7 @@ class StorageService {
 
     for (const [busId, connection] of this.busConnections.entries()) {
       const ageSeconds = currentTime - connection.lastSeen;
-      
+
       if (ageSeconds > maxAgeSeconds) {
         staleBuses.push(busId);
       }
@@ -200,7 +202,7 @@ class StorageService {
    */
   startCleanupInterval() {
     const intervalMs = 60000; // 1 minute
-    
+
     this.cleanupInterval = setInterval(() => {
       this.cleanupStaleBuses();
     }, intervalMs);
@@ -226,7 +228,7 @@ class StorageService {
     this.busConnections.clear();
     this.stats.totalUpdates = 0;
     this.stats.lastUpdateTime = null;
-    
+
     console.log('🗑️  Cleared all storage data');
   }
 

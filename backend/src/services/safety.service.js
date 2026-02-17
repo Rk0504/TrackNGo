@@ -37,13 +37,14 @@ class SafetyService {
      * @param {number} timestamp (seconds)
      * @returns {Object} { score, violations }
      */
-    processSafetyScore(busId, currentSpeed, timestamp) {
+    processSafetyScore(busId, currentSpeed, timestamp, timestampMs = null) {
         // Initialize state if new bus
         if (!this.busStates.has(busId)) {
             this.busStates.set(busId, {
                 score: this.MAX_SCORE,
                 lastSpeed: 0,
                 lastTimestamp: timestamp,
+                lastTimestampMs: timestampMs || (timestamp * 1000), // Initialize ms
                 violations: []
             });
             return { score: this.MAX_SCORE, violations: [] };
@@ -54,8 +55,14 @@ class SafetyService {
         let newScore = state.score;
 
         // Calculate time delta (in seconds)
-        // Handle millisecond timestamps if necessary, but API spec says seconds usually
-        const timeDelta = timestamp - state.lastTimestamp;
+        // Use high-precision timestampMs if available
+        let timeDelta;
+
+        if (timestampMs && state.lastTimestampMs) {
+            timeDelta = (timestampMs - state.lastTimestampMs) / 1000;
+        } else {
+            timeDelta = timestamp - state.lastTimestamp;
+        }
 
         // Skip if duplicate update or time travel
         if (timeDelta <= 0) {
@@ -80,19 +87,29 @@ class SafetyService {
         // G-Force = Acceleration / 9.81
         const gForce = acceleration / 9.81;
 
-        // 2. Check Sudden Acceleration (+ve G-Force > 0.22g)
-        // User requested: "for at least one second" - timeDelta usually is >= 1 sec in GPS updates
-        if (gForce > this.ACCEL_THRESHOLD_G) {
-            newScore -= this.PENALTY_ACCEL;
-            violations.push('Sudden Acceleration');
-            console.log(`⚠️ Safety Violation [${busId}]: Sudden Accel (${gForce.toFixed(3)}g)`);
+        // Debug Logging (Throttle this in high production, but critical for debugging now)
+        if (Math.abs(gForce) > 0.15) {
+            console.log(`[Safety] ${busId} | Speed: ${currentSpeed} | dV: ${(vFinal - vInitial).toFixed(2)} | dt: ${timeDelta.toFixed(3)} | Accel: ${acceleration.toFixed(2)} | G: ${gForce.toFixed(3)}`);
         }
 
-        // 3. Check Harsh Braking (-ve G-Force < -0.265g)
-        if (gForce < -this.BRAKE_THRESHOLD_G) {
+        // ADAPTIVE THRESHOLDS: Check if this is a MOBILE test device
+        // Mobile GPS is noisier and "human simulation" (running/walking) produces lower G-forces compared to a real bus stopping.
+        const isMobile = busId && String(busId).includes('MOBILE');
+        const accelThreshold = isMobile ? 0.06 : this.ACCEL_THRESHOLD_G; // extremely lower for walking test (0.06g)
+        const brakeThreshold = isMobile ? 0.08 : this.BRAKE_THRESHOLD_G; // extremely lower for walking test (0.08g)
+
+        // 2. Check Sudden Acceleration (+ve G-Force > threshold)
+        if (gForce > accelThreshold) {
+            newScore -= this.PENALTY_ACCEL;
+            violations.push('Sudden Acceleration');
+            console.log(`⚠️ Violation [${busId}]: Sudden Accel (${gForce.toFixed(3)}g > ${accelThreshold}g)`);
+        }
+
+        // 3. Check Harsh Braking (-ve G-Force < -threshold)
+        if (gForce < -brakeThreshold) {
             newScore -= this.PENALTY_BRAKING;
             violations.push('Harsh Braking');
-            console.log(`⚠️ Safety Violation [${busId}]: Harsh Braking (${gForce.toFixed(3)}g)`);
+            console.log(`⚠️ Violation [${busId}]: Harsh Braking (${gForce.toFixed(3)}g < -${brakeThreshold}g)`);
         }
 
         // Clamp Score
@@ -102,6 +119,7 @@ class SafetyService {
         state.score = newScore;
         state.lastSpeed = currentSpeed;
         state.lastTimestamp = timestamp;
+        state.lastTimestampMs = timestampMs || (timestamp * 1000);
 
         // Keep last 5 violations for history if needed
         if (violations.length > 0) {

@@ -9,6 +9,10 @@ function DriverMode() {
     const [currentTime, setCurrentTime] = useState(new Date().toLocaleTimeString());
     const watchIdRef = useRef(null);
     const lastUpdateRef = useRef(0);
+    const [nextStop, setNextStop] = useState(null);
+    const [eta, setEta] = useState(null);
+    const [safetyScore, setSafetyScore] = useState(100);
+    const [violation, setViolation] = useState(null);
 
     const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080';
 
@@ -23,7 +27,21 @@ function DriverMode() {
         };
     }, []);
 
-    const startTracking = () => {
+    const wakeLockRef = useRef(null);
+
+    // Function to request Wake Lock
+    const requestWakeLock = async () => {
+        try {
+            if ('wakeLock' in navigator) {
+                wakeLockRef.current = await navigator.wakeLock.request('screen');
+                setStatus('GPS Active • Screen Kept On');
+            }
+        } catch (err) {
+            console.error('Wake Lock error:', err);
+        }
+    };
+
+    const startTracking = async () => {
         if (!navigator.geolocation) {
             setError('Geolocation is not supported by your browser');
             return;
@@ -32,6 +50,9 @@ function DriverMode() {
         setIsTracking(true);
         setStatus('Initializing GPS...');
         setError(null);
+
+        // Request Screen Wake Lock
+        await requestWakeLock();
 
         const options = {
             enableHighAccuracy: true,
@@ -46,11 +67,22 @@ function DriverMode() {
         );
     };
 
-    const stopTracking = () => {
+    const stopTracking = async () => {
         if (watchIdRef.current) {
             navigator.geolocation.clearWatch(watchIdRef.current);
             watchIdRef.current = null;
         }
+
+        // Release Wake Lock
+        if (wakeLockRef.current) {
+            try {
+                await wakeLockRef.current.release();
+                wakeLockRef.current = null;
+            } catch (err) {
+                console.error('Wake Lock release error:', err);
+            }
+        }
+
         setIsTracking(false);
         setStatus('Stopped');
     };
@@ -62,7 +94,8 @@ function DriverMode() {
         let currentSpeed = speed ? Math.round(speed * 3.6) : 0; // Convert m/s to km/h and round off
 
         // Filter out GPS noise when stationary (if speed < 3 km/h, treat as 0)
-        if (currentSpeed < 3) currentSpeed = 0;
+        // DISABLED FOR TESTING: We need low speeds (walking/running) to register for Safety Score to work!
+        // if (currentSpeed < 3) currentSpeed = 0; 
 
         setLocation({
             lat: latitude.toFixed(6),
@@ -71,9 +104,9 @@ function DriverMode() {
             timestamp: new Date().toLocaleTimeString()
         });
 
-        // Throttle updates to every 3 seconds
+        // Throttle updates to every 1 second (Crucial for acceleration calculation)
         const now = Date.now();
-        if (now - lastUpdateRef.current < 3000) return;
+        if (now - lastUpdateRef.current < 1000) return;
         lastUpdateRef.current = now;
 
         setStatus('Sending update...');
@@ -84,7 +117,8 @@ function DriverMode() {
             lng: longitude,
             speed: currentSpeed,
             route_id: 'R12', // Default to R12 for testing, or make this selectable
-            timestamp: timestamp
+            timestamp: timestamp,
+            timestamp_ms: Date.now() // High precision for G-force calculation
         };
 
         try {
@@ -97,7 +131,17 @@ function DriverMode() {
             });
 
             if (response.ok) {
+                const data = await response.json();
                 setStatus('✅ update sent!');
+                if (data.nextStop) setNextStop(data.nextStop);
+                if (data.eta) setEta(data.eta);
+                if (data.safety_score !== undefined) setSafetyScore(data.safety_score);
+
+                if (data.violations && data.violations.length > 0) {
+                    setViolation(data.violations[0]);
+                    // Clear violation after 3 seconds
+                    setTimeout(() => setViolation(null), 3000);
+                }
             } else {
                 const errData = await response.json();
                 console.error('API Error:', errData);
@@ -142,6 +186,12 @@ function DriverMode() {
                     </div>
                 )}
 
+                {violation && (
+                    <div className="bg-red-500 text-white px-4 py-2 rounded mb-4 text-center font-bold animate-bounce">
+                        ⚠️ {violation} Detected!
+                    </div>
+                )}
+
                 <div className="text-center mb-6">
                     <div className={`text-sm font-semibold mb-2 ${isTracking ? 'text-green-600' : 'text-gray-500'}`}>
                         Status: {status}
@@ -174,10 +224,28 @@ function DriverMode() {
                             <span className="text-gray-500">Longitude:</span>
                             <span className="font-bold">{location.lng}</span>
                         </div>
-                        <div className="flex justify-between">
+                        <div className="flex justify-between items-center border-b pb-2">
                             <span className="text-gray-500">Speed:</span>
-                            <span className="font-bold">{Math.round(location.speed)} km/h</span>
+                            <span className="font-bold text-xl">{Math.round(location.speed)} km/h</span>
                         </div>
+
+                        {(nextStop || eta) && (
+                            <div className="flex justify-between items-center pt-2 bg-blue-50 p-2 rounded mt-2">
+                                <span className="text-gray-600 font-medium">Next Route:</span>
+                                <div className="text-right">
+                                    <div className="font-bold text-blue-900">{nextStop || 'Calculating...'}</div>
+                                    <div className="text-sm text-blue-700 font-semibold">{eta}</div>
+                                </div>
+                            </div>
+                        )}
+
+                        <div className="mt-4 pt-2 border-t flex justify-between items-center">
+                            <span className="text-gray-600 font-medium">Safety Score:</span>
+                            <span className={`font-bold text-lg ${safetyScore > 80 ? 'text-green-600' : safetyScore > 50 ? 'text-yellow-600' : 'text-red-600'}`}>
+                                {safetyScore}/100
+                            </span>
+                        </div>
+
                         <div className="text-xs text-gray-400 text-center mt-2">
                             Last Update: {location.timestamp}
                         </div>
