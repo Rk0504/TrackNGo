@@ -39,7 +39,7 @@ class StorageService {
    * Update bus location and trigger real-time broadcasts
    */
   updateBusLocation(busData) {
-    const { bus_id, lat, lng, speed, route_id, timestamp, safety_score, violations } = busData;
+    const { bus_id, lat, lng, speed, route_id, timestamp, safety_score, violations, ...otherFields } = busData;
 
     try {
       // Validate required fields
@@ -59,6 +59,8 @@ class StorageService {
 
       // Create updated bus object
       const updatedBus = {
+        ...(existingBus || {}), // Keep existing fields
+        ...otherFields,         // Add new extra fields
         bus_id,
         lat: parseFloat(lat),
         lng: parseFloat(lng),
@@ -66,8 +68,8 @@ class StorageService {
         route_id: route_id || null,
         timestamp: providedTimestamp,
         lastUpdate: new Date().toISOString(),
-        eta: null, // Will be calculated by ETA service
-        safety_score: safety_score || 100,
+        // Only update safety score if provided, else keep existing or default to 100
+        safety_score: safety_score !== undefined ? safety_score : (existingBus?.safety_score || 100),
         violations: violations || []
       };
 

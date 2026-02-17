@@ -11,8 +11,10 @@ function DriverMode() {
     const lastUpdateRef = useRef(0);
     const [nextStop, setNextStop] = useState(null);
     const [eta, setEta] = useState(null);
+
     const [safetyScore, setSafetyScore] = useState(100);
     const [violation, setViolation] = useState(null);
+    const lastPosRef = useRef(null); // To calculate manual speed if GPS speed is null
 
     const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080';
 
@@ -56,8 +58,8 @@ function DriverMode() {
 
         const options = {
             enableHighAccuracy: true,
-            timeout: 5000,
-            maximumAge: 0
+            timeout: 30000, // Increased to 30s to fix "Timeout expired" on mobile
+            maximumAge: 2000 // Allow cached positions up to 2s
         };
 
         watchIdRef.current = navigator.geolocation.watchPosition(
@@ -91,11 +93,44 @@ function DriverMode() {
         const { latitude, longitude, speed, heading } = position.coords;
         const timestamp = Math.floor(Date.now() / 1000);
 
-        let currentSpeed = speed ? Math.round(speed * 3.6) : 0; // Convert m/s to km/h and round off
+        // MANUAL SPEED CALCULATION FALLBACK
+        // Many mobile browsers return speed=null or speed=0 unless moving fast.
+        // We calculate speed manually if GPS speed is unavailable but location changed.
+        let manualSpeed = 0;
+        if (lastPosRef.current) {
+            const { lat: lat1, lng: lng1, time: time1 } = lastPosRef.current;
+            const timeDiff = (Date.now() - time1) / 1000; // seconds
 
-        // Filter out GPS noise when stationary (if speed < 3 km/h, treat as 0)
-        // DISABLED FOR TESTING: We need low speeds (walking/running) to register for Safety Score to work!
-        // if (currentSpeed < 3) currentSpeed = 0; 
+            if (timeDiff > 0) {
+                // Haversine Distance
+                const R = 6371e3; // metres
+                const φ1 = lat1 * Math.PI / 180;
+                const φ2 = latitude * Math.PI / 180;
+                const Δφ = (latitude - lat1) * Math.PI / 180;
+                const Δλ = (longitude - lng1) * Math.PI / 180;
+                const a = Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
+                    Math.cos(φ1) * Math.cos(φ2) *
+                    Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
+                const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+                const d = R * c; // in metres
+
+                manualSpeed = (d / timeDiff) * 3.6; // convert m/s to km/h
+            }
+        }
+
+        // Use GPS speed if available, else usage manual speed
+        // Filter out extreme jumps (teleportation) > 120 km/h manually
+        if (manualSpeed > 150) manualSpeed = 0;
+
+        let currentSpeed = (speed !== null && speed !== undefined)
+            ? Math.round(speed * 3.6)
+            : Math.round(manualSpeed);
+
+        // Update last pos
+        lastPosRef.current = { lat: latitude, lng: longitude, time: Date.now() };
+
+        // Ensure we don't send NaN
+        if (isNaN(currentSpeed)) currentSpeed = 0;
 
         setLocation({
             lat: latitude.toFixed(6),
