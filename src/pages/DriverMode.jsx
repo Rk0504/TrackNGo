@@ -190,8 +190,17 @@ function DriverMode() {
 
     const handleError = (err) => {
         console.warn('GPS Error:', err);
-        setError(`GPS Error: ${err.message}. Ensure you are on HTTPS or using the chrome://flags workaround.`);
+        let msg = err.message;
+        if (err.code === 1) {
+            msg = "Permission denied. Please enable Location in Phone Settings > Site Settings > Allow Location.";
+        } else if (err.code === 2) {
+            msg = "Location unavailable. Ensure GPS is ON and you have a clear sky view.";
+        } else if (err.code === 3) {
+            msg = "GPS Timeout. Signal is weak. Please move outdoors.";
+        }
+        setError(`GPS Error: ${msg}`);
         setIsTracking(false);
+        setStatus('GPS Error');
     };
 
     return (
