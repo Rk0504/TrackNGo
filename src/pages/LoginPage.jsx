@@ -44,6 +44,7 @@ function LoginPage() {
         <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4">
             <div className="max-w-md w-full space-y-8 bg-white p-8 rounded-xl shadow-lg">
                 <div className="text-center">
+                    <img className="mx-auto h-24 w-auto drop-shadow-md mb-4" src="/logo-full.svg" alt="TrackNGo" />
                     <h2 className="mt-6 text-3xl font-extrabold text-gray-900">Sign in to your account</h2>
                     <p className="mt-2 text-sm text-gray-600">
                         Or{' '}

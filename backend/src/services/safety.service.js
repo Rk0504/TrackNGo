@@ -42,9 +42,9 @@ class SafetyService {
         if (!this.busStates.has(busId)) {
             this.busStates.set(busId, {
                 score: this.MAX_SCORE,
-                lastSpeed: 0,
-                lastTimestamp: timestamp,
-                lastTimestampMs: timestampMs || (timestamp * 1000), // Initialize ms
+                speedHistory: [], // Array of { speed, timeMs }
+                overspeedStartTime: null,
+                lastViolationTime: 0,
                 violations: []
             });
             return { score: this.MAX_SCORE, violations: [] };
@@ -54,83 +54,109 @@ class SafetyService {
         const violations = [];
         let newScore = state.score;
 
-        // Calculate time delta (in seconds)
-        // Use high-precision timestampMs if available
-        let timeDelta;
+        // Current Time in MS
+        const nowMs = timestampMs || (timestamp * 1000);
 
-        if (timestampMs && state.lastTimestampMs) {
-            timeDelta = (timestampMs - state.lastTimestampMs) / 1000;
+        // Add to history
+        state.speedHistory.push({ speed: currentSpeed, timeMs: nowMs });
+
+        // Prune history (keep last 5 seconds max)
+        const historyWindowMs = 5000;
+        state.speedHistory = state.speedHistory.filter(entry => (nowMs - entry.timeMs) <= historyWindowMs);
+
+        // 1. Check Overspeeding (Speed > 40 km/h for > 2 seconds)
+        // Rule: If speed > 40 km/h for more than 2 seconds, 2 points deducted.
+        if (currentSpeed > 40) {
+            if (!state.overspeedStartTime) {
+                state.overspeedStartTime = nowMs;
+            } else {
+                const duration = nowMs - state.overspeedStartTime;
+                if (duration > 2000) { // > 2 seconds
+                    // Deduct points
+                    // We add a cooldown or valid check to ensure we don't deduct continuously?
+                    // "2 points will be deducted". Simple interpretation: Deduct once per "event" of exceeding 2s?
+                    // Or every 2s block? Let's treat it as: Once we cross 2s mark, deduct, and reset timer to penalize again if it continues?
+                    // Let's reset timer to penalize every 2s of overspeeding.
+                    newScore -= 2;
+                    violations.push('Overspeeding');
+                    console.log(`⚠️ Violation [${busId}]: Overspeeding (>40km/h for 2s)`);
+                    state.overspeedStartTime = nowMs; // Reset timer to count next 2s
+                }
+            }
         } else {
-            timeDelta = timestamp - state.lastTimestamp;
+            state.overspeedStartTime = null;
         }
 
-        // Skip if duplicate update or time travel
-        if (timeDelta <= 0) {
-            return { score: state.score, violations: [] };
+        // 2 & 3. Harsh Braking / Sudden Acceleration (3-second window)
+        // "3 seconds is the time taken for calculation"
+        // Formula: G-Force = (Final - Initial) / (time * 35.316)
+
+        // Find record closely matching 3 seconds ago
+        const targetTime = nowMs - 3000;
+        // Find entry with closest timeMs to targetTime
+        let statsInitial = state.speedHistory[0];
+        let minDiff = Math.abs(state.speedHistory[0].timeMs - targetTime);
+
+        for (let i = 1; i < state.speedHistory.length; i++) {
+            const diff = Math.abs(state.speedHistory[i].timeMs - targetTime);
+            if (diff < minDiff) {
+                minDiff = diff;
+                statsInitial = state.speedHistory[i];
+            }
         }
 
-        // 1. Check Overspeeding
-        if (currentSpeed > this.SPEED_LIMIT) {
-            newScore -= this.PENALTY_OVERSPEED;
-            violations.push('Overspeeding');
-            console.log(`⚠️ Safety Violation [${busId}]: Overspeeding (${currentSpeed} km/h)`);
-        }
+        // Only calculate if we have a robust delta (at least 1s difference to be meaningful, ideally close to 3s)
+        const timeTakenSec = (nowMs - statsInitial.timeMs) / 1000;
 
-        // Calculate Acceleration and G-Force
-        // Convert speeds to m/s: (km/h) / 3.6
-        const vFinal = currentSpeed / 3.6;
-        const vInitial = state.lastSpeed / 3.6;
+        // Handle Mobile Testing vs Reality:
+        // Real bus: 3s window is standard.
+        // Mobile test: 3s might smooth out walking too much.
+        // But user provided SPECIFIC formula with 3s. I will apply it.
+        // To help mobile testing, we might need a shorter window if 3s yields no results?
+        // Let's stick to the requested logic first.
 
-        // Acceleration (m/s^2) = (vFinal - vInitial) / time
-        const acceleration = (vFinal - vInitial) / timeDelta;
+        // Cooldown: Don't penalize same G-force event multiple times (sliding window overlap)
+        const inCooldown = (nowMs - state.lastViolationTime) < 3000;
 
-        // G-Force = Acceleration / 9.81
-        const gForce = acceleration / 9.81;
+        if (timeTakenSec >= 0.5 && !inCooldown) { // Calc if at least 0.5s passed
+            const vFinal = currentSpeed; // km/h
+            const vInitial = statsInitial.speed; // km/h
 
-        // Debug Logging (Throttle this in high production, but critical for debugging now)
-        if (Math.abs(gForce) > 0.15) {
-            console.log(`[Safety] ${busId} | Speed: ${currentSpeed} | dV: ${(vFinal - vInitial).toFixed(2)} | dt: ${timeDelta.toFixed(3)} | Accel: ${acceleration.toFixed(2)} | G: ${gForce.toFixed(3)}`);
-        }
+            // Formula: G = (vFinal - vInitial) / (t * 35.316)
+            const gForce = (vFinal - vInitial) / (timeTakenSec * 35.316);
 
-        // ADAPTIVE THRESHOLDS: Check if this is a MOBILE test device
-        // Mobile GPS is noisier and "human simulation" (running/walking) produces lower G-forces compared to a real bus stopping.
-        const isMobile = busId && String(busId).includes('MOBILE');
-        const accelThreshold = isMobile ? 0.06 : this.ACCEL_THRESHOLD_G; // extremely lower for walking test (0.06g)
-        const brakeThreshold = isMobile ? 0.08 : this.BRAKE_THRESHOLD_G; // extremely lower for walking test (0.08g)
+            // Thresholds
+            // Sudden Accel: > +0.22g (-3 points)
+            // Harsh Braking: < -0.265g (-3 points)
 
-        // 2. Check Sudden Acceleration (+ve G-Force > threshold)
-        if (gForce > accelThreshold) {
-            newScore -= this.PENALTY_ACCEL;
-            violations.push('Sudden Acceleration');
-            console.log(`⚠️ Violation [${busId}]: Sudden Accel (${gForce.toFixed(3)}g > ${accelThreshold}g)`);
-        }
+            // Debug
+            // console.log(`[Safety] ${busId} | dt: ${timeTakenSec.toFixed(2)}s | dV: ${(vFinal-vInitial).toFixed(1)} | G: ${gForce.toFixed(3)}`);
 
-        // 3. Check Harsh Braking (-ve G-Force < -threshold)
-        if (gForce < -brakeThreshold) {
-            newScore -= this.PENALTY_BRAKING;
-            violations.push('Harsh Braking');
-            console.log(`⚠️ Violation [${busId}]: Harsh Braking (${gForce.toFixed(3)}g < -${brakeThreshold}g)`);
+            if (gForce > 0.22) {
+                newScore -= 3;
+                violations.push('Sudden Acceleration');
+                console.log(`⚠️ Violation [${busId}]: Sudden Accel (${gForce.toFixed(3)}g > 0.22g within ${timeTakenSec.toFixed(1)}s)`);
+                state.lastViolationTime = nowMs;
+            } else if (gForce < -0.265) {
+                newScore -= 3;
+                violations.push('Harsh Braking');
+                console.log(`⚠️ Violation [${busId}]: Harsh Braking (${gForce.toFixed(3)}g < -0.265g within ${timeTakenSec.toFixed(1)}s)`);
+                state.lastViolationTime = nowMs;
+            }
         }
 
         // Clamp Score
         newScore = Math.max(this.MIN_SCORE, Math.min(this.MAX_SCORE, newScore));
 
-        // Update State
         state.score = newScore;
-        state.lastSpeed = currentSpeed;
-        state.lastTimestamp = timestamp;
-        state.lastTimestampMs = timestampMs || (timestamp * 1000);
 
-        // Keep last 5 violations for history if needed
+        // Keep violations history
         if (violations.length > 0) {
             state.violations.push(...violations);
             if (state.violations.length > 5) state.violations.shift();
         }
 
-        return {
-            score: newScore,
-            violations: violations
-        };
+        return { score: newScore, violations: violations };
     }
 }
 

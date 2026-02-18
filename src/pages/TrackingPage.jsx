@@ -41,9 +41,7 @@ function TrackingPage() {
       <div className="md:hidden absolute top-0 left-0 right-0 z-20 p-4 pointer-events-none">
         <div className="flex items-center justify-between pointer-events-auto">
           <div className="bg-white/90 backdrop-blur-sm p-2 rounded-full shadow-lg border border-gray-100 flex items-center space-x-2 pr-4">
-            <div className="w-8 h-8 bg-primary-600 rounded-full flex items-center justify-center text-white font-bold text-xs shadow-sm">
-              TG
-            </div>
+            <img src="/logo-icon.svg" alt="TrackNGo" className="w-8 h-8 rounded-full shadow-sm object-cover" />
             <div>
               <h1 className="text-sm font-bold text-gray-800 leading-tight">TrackNGo</h1>
               <div className="flex items-center space-x-1">
