@@ -457,6 +457,9 @@ class WebSocketService {
         speed: message.data.speed || 0,
         eta: message.data.eta || null,
         route_id: message.data.route_id || null,
+        safety_score: message.data.safety_score, // Added safety_score
+        violations: message.data.violations || [], // Added violations
+        status: message.data.status, // Added status
         timestamp: message.data.timestamp,
         lastUpdate: message.data.lastUpdate
       },
