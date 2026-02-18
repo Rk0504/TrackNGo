@@ -14,6 +14,7 @@ function TrackingPage() {
   // Mobile UI States
   const [isMobileListOpen, setIsMobileListOpen] = useState(false)
   const [isComplaintModalOpen, setIsComplaintModalOpen] = useState(false)
+  const [expandedBusId, setExpandedBusId] = useState(null) // For mobile schedule expansion
 
   const busArray = Array.from(buses.values()).sort((a, b) => a.bus_id.localeCompare(b.bus_id))
 
@@ -112,26 +113,105 @@ function TrackingPage() {
                   <div
                     key={bus.bus_id}
                     onClick={() => {
+                      // If already selected, maybe toggle expand? 
+                      // For now, keep behavior: select and close list to show map
+                      // But user wants "Previous Travels" (Schedule) which is inside the list usually.
+                      // I will make the CLICK select the bus, but I need a separate "View Map" button maybe?
                       selectBus(bus.bus_id)
-                      setIsMobileListOpen(false) // Close sheet to show map
+                      // setIsMobileListOpen(false) // Don't close immediately if we want to show details
                     }}
-                    className={`bg-white p-4 rounded-xl shadow-sm border mb-3 flex items-center justify-between ${selectedBus === bus.bus_id ? 'border-primary-500 ring-1 ring-primary-500' : 'border-gray-100'}`}
+                    className={`bg-white p-4 rounded-xl shadow-sm border mb-3 flex flex-col ${selectedBus === bus.bus_id ? 'border-primary-500 ring-1 ring-primary-500' : 'border-gray-100'}`}
                   >
-                    <div className="flex items-center space-x-3">
-                      <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center text-blue-600">
-                        <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center space-x-3">
+                        <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center text-blue-600">
+                          <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
+                          </svg>
+                        </div>
+                        <div>
+                          <h3 className="font-bold text-gray-800">{bus.bus_id}</h3>
+                          <p className="text-xs text-gray-500">{bus.route_name || 'Route 12 - Thanjavur'}</p>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <div className="text-lg font-bold text-gray-800">{Math.round(bus.speed || 0)} <span className="text-xs font-normal text-gray-500">km/h</span></div>
+                        {/* Safety Score for Mobile */}
+                        <div className="flex items-center justify-end space-x-1 mt-1">
+                          <div className={`w-2 h-2 rounded-full ${(bus.safety_score ?? 100) >= 90 ? 'bg-green-500' : 'bg-red-500'}`}></div>
+                          <span className="text-xs font-bold text-gray-600">{bus.safety_score ?? 100}%</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Next Stop & ETA */}
+                    {bus.next_stop && (
+                      <div className="bg-gray-50 rounded-lg p-2 mb-2 flex justify-between items-center text-xs">
+                        <span className="text-gray-500">Next: <span className="font-bold text-gray-800">{bus.next_stop}</span></span>
+                        {bus.eta && <span className="bg-blue-100 text-blue-700 font-bold px-2 py-0.5 rounded">{bus.eta}</span>}
+                      </div>
+                    )}
+
+                    {/* View Map & Schedule Buttons */}
+                    <div className="mt-2 flex space-x-2">
+                      {selectedBus === bus.bus_id && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setIsMobileListOpen(false);
+                          }}
+                          className="flex-1 bg-primary-50 text-primary-600 font-bold py-2 rounded-lg text-sm"
+                        >
+                          View Map
+                        </button>
+                      )}
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setExpandedBusId(expandedBusId === bus.bus_id ? null : bus.bus_id);
+                        }}
+                        className="flex-1 bg-gray-100 text-gray-600 font-bold py-2 rounded-lg text-sm flex items-center justify-center space-x-1"
+                      >
+                        <span>{expandedBusId === bus.bus_id ? 'Hide Stops' : 'View Stops'}</span>
+                        <svg className={`w-4 h-4 transform transition-transform ${expandedBusId === bus.bus_id ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                         </svg>
-                      </div>
-                      <div>
-                        <h3 className="font-bold text-gray-800">{bus.bus_id}</h3>
-                        <p className="text-xs text-gray-500">{bus.route_name || 'Route 12 - Thanjavur'}</p>
-                      </div>
+                      </button>
                     </div>
-                    <div className="text-right">
-                      <div className="text-lg font-bold text-gray-800">{bus.speed || 0} <span className="text-xs font-normal text-gray-500">km/h</span></div>
-                      <div className="text-xs text-green-600 font-medium">Auto-Updating</div>
-                    </div>
+
+                    {/* Timeline / Schedule (Previous Travels) */}
+                    {expandedBusId === bus.bus_id && bus.stops && (
+                      <div className="mt-3 pt-3 border-t border-gray-100">
+                        <h4 className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2">Route Schedule</h4>
+                        <div className="space-y-0 relative pl-2">
+                          {/* Line Connector */}
+                          <div className="absolute left-[13.5px] top-1 bottom-1 w-[1px] bg-gray-200"></div>
+
+                          {bus.stops.map((stop, index) => {
+                            const isPast = index < (bus.currentStopIndex || 0);
+                            const isCurrent = index === (bus.currentStopIndex || 0);
+                            return (
+                              <div key={index} className="relative flex items-center space-x-3 py-1.5 group/stop">
+                                <div className={`w-3 h-3 rounded-full border-2 z-10 flex-shrink-0 ${isCurrent
+                                  ? 'bg-primary-500 border-primary-200 ring-2 ring-primary-100'
+                                  : isPast
+                                    ? 'bg-gray-300 border-gray-100'
+                                    : 'bg-white border-gray-300'
+                                  }`}></div>
+                                <div className="flex-1 min-w-0">
+                                  <div className={`text-xs truncate ${isCurrent ? 'font-bold text-gray-900' : isPast ? 'text-gray-400 line-through' : 'text-gray-600'}`}>
+                                    {stop.name}
+                                  </div>
+                                </div>
+                                <div className="text-[10px] text-gray-400 font-mono">
+                                  {`+${Math.round(stop.time)}m`}
+                                </div>
+                              </div>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 ))}
 

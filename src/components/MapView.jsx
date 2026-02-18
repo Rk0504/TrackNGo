@@ -35,6 +35,7 @@ function MapView() {
   }, [map])
 
   const markersRef = useRef(new Map())
+  const infoWindowsRef = useRef(new Map())
 
   // Use route visualization hook
   useRouteVisualization(map, buses, selectedBus)
@@ -61,7 +62,12 @@ function MapView() {
           }
         }
 
-        // Update marker appearance if selection changed
+        // Update InfoWindow content live
+        const infoWindow = infoWindowsRef.current.get(busId)
+        if (infoWindow) {
+          infoWindow.setContent(createInfoWindowContent(bus))
+        }
+
         updateMarker(busId, position, {
           icon: createBusIcon(bus, isSelected),
           title: `${bus.bus_id} - ${bus.route_name || 'Unknown Route'}`
@@ -87,6 +93,7 @@ function MapView() {
           const infoWindow = new google.maps.InfoWindow({
             content: createInfoWindowContent(bus)
           })
+          infoWindowsRef.current.set(busId, infoWindow)
 
           marker.addListener('click', () => {
             infoWindow.open(map, marker)
@@ -100,6 +107,13 @@ function MapView() {
     markersRef.current.forEach((marker, busId) => {
       if (!buses.has(busId)) {
         removeMarker(busId)
+
+        // Remove info window
+        if (infoWindowsRef.current.has(busId)) {
+          infoWindowsRef.current.get(busId).close()
+          infoWindowsRef.current.delete(busId)
+        }
+
         markersRef.current.delete(busId)
       }
     })
