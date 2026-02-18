@@ -43,6 +43,8 @@ function DriverMode() {
         }
     };
 
+    const [highAccuracy, setHighAccuracy] = useState(true);
+
     const startTracking = async () => {
         if (!navigator.geolocation) {
             setError('Geolocation is not supported by your browser');
@@ -57,9 +59,9 @@ function DriverMode() {
         await requestWakeLock();
 
         const options = {
-            enableHighAccuracy: true,
-            timeout: 30000, // Increased to 30s to fix "Timeout expired" on mobile
-            maximumAge: 2000 // Allow cached positions up to 2s
+            enableHighAccuracy: highAccuracy,
+            timeout: 15000,
+            maximumAge: 0
         };
 
         watchIdRef.current = navigator.geolocation.watchPosition(
@@ -90,7 +92,7 @@ function DriverMode() {
     };
 
     const handlePosition = async (position) => {
-        const { latitude, longitude, speed, heading } = position.coords;
+        const { latitude, longitude, speed, heading, accuracy } = position.coords;
         const timestamp = Math.floor(Date.now() / 1000);
 
         // MANUAL SPEED CALCULATION FALLBACK
@@ -119,7 +121,7 @@ function DriverMode() {
         }
 
         // Use GPS speed if available, else usage manual speed
-        // Filter out extreme jumps (teleportation) > 120 km/h manually
+        // Filter out extreme jumps (teleportation) > 150 km/h manually
         if (manualSpeed > 150) manualSpeed = 0;
 
         let currentSpeed = (speed !== null && speed !== undefined)
@@ -136,6 +138,7 @@ function DriverMode() {
             lat: latitude.toFixed(6),
             lng: longitude.toFixed(6),
             speed: currentSpeed,
+            accuracy: Math.round(accuracy),
             timestamp: new Date().toLocaleTimeString()
         });
 
@@ -224,6 +227,17 @@ function DriverMode() {
                     />
                 </div>
 
+                <div className="mb-4 flex items-center justify-center space-x-2">
+                    <label className="text-sm font-medium text-gray-700">High Precision GPS:</label>
+                    <input
+                        type="checkbox"
+                        checked={highAccuracy}
+                        onChange={(e) => setHighAccuracy(e.target.checked)}
+                        disabled={isTracking}
+                        className="h-5 w-5 text-green-600 rounded"
+                    />
+                </div>
+
                 {error && (
                     <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4 text-sm">
                         {error}
@@ -267,6 +281,9 @@ function DriverMode() {
                         <div className="flex justify-between">
                             <span className="text-gray-500">Longitude:</span>
                             <span className="font-bold">{location.lng}</span>
+                        </div>
+                        <div className="flex justify-between text-xs text-gray-500 border-b pb-2 mb-2">
+                            <span>GPS Accuracy: ±{location.accuracy}m</span>
                         </div>
                         <div className="flex justify-between items-center border-b pb-2">
                             <span className="text-gray-500">Speed:</span>
