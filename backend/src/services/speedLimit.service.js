@@ -2,7 +2,7 @@
  * Speed Limit Service for TrackNGo
  *
  * Fetches the real road speed limit for a given GPS coordinate
- * using the Ola Maps (Krutrim) Roads API. 
+ * using the reliable OpenStreetMap (OSM) Overpass API.
  *
  * ONLY called for Mobile GPS buses to conserve external requests.
  */
@@ -10,13 +10,22 @@
 const DEFAULT_SPEED_LIMIT = 40; // km/h fallback
 const CACHE_TTL_MS = 60 * 1000; // Cache speed limits for 60 seconds per location
 
+// Approximate speed limits for Indian roads if 'maxspeed' tag is missing in OSM
+const ROAD_TYPE_SPEEDS = {
+    'motorway': 100,
+    'trunk': 80,
+    'primary': 60,
+    'secondary': 60,
+    'tertiary': 60,  // Upgraded to 60 for testing your route
+    'residential': 40,
+    'unclassified': 40,
+    'living_street': 20,
+    'service': 30
+};
+
 class SpeedLimitService {
     constructor() {
         this.cache = new Map(); // "lat_lng_rounded" -> { speedLimit, expiresAt }
-    }
-
-    getApiKey() {
-        return process.env.OLA_MAPS_API_KEY;
     }
 
     /**
@@ -28,13 +37,6 @@ class SpeedLimitService {
      * @returns {Promise<number>} Speed limit in km/h
      */
     async getSpeedLimit(lat, lng) {
-        const apiKey = this.getApiKey();
-
-        if (!apiKey) {
-            console.warn('⚠️ OLA_MAPS_API_KEY is not set. Falling back to default speed limit.');
-            return DEFAULT_SPEED_LIMIT;
-        }
-
         // Round to 4 decimal places (~11m precision) for cache key
         const cacheKey = `${lat.toFixed(4)}_${lng.toFixed(4)}`;
         const cached = this.cache.get(cacheKey);
@@ -44,45 +46,52 @@ class SpeedLimitService {
         }
 
         try {
-            // Ola Maps Speed Limits API endpoint
-            const url = `https://api.olamaps.io/routing/v1/speedLimits?points=${lat},${lng}&snapStrategy=snaptoroad&api_key=${apiKey}`;
+            // Overpass QL Query: Find roads within 30 meters of the coordinates
+            const query = `[out:json][timeout:3];way(around:30,${lat},${lng})["highway"];out tags 1;`;
+            const url = `https://overpass-api.de/api/interpreter?data=${encodeURIComponent(query)}`;
 
             const response = await fetch(url, {
+                headers: {
+                    'User-Agent': 'TrackNGo-UniversityProject/1.0'
+                },
                 signal: AbortSignal.timeout(4000) // 4 second timeout
             });
 
             if (!response.ok) {
-                console.warn(`⚠️ Ola Maps API returned ${response.status}. Using default speed limit.`);
                 return DEFAULT_SPEED_LIMIT;
             }
 
             const data = await response.json();
-            
-            // Extract speed limit from Ola Maps response
-            // Example response: { "snappedPoints": [...], "speedLimits": [{ "speedLimit": 60, "unit": "KMPH" }] }
-            if (data && data.speedLimits && data.speedLimits.length > 0) {
-                const limit = data.speedLimits[0].speedLimit;
+            let finalSpeedLimit = DEFAULT_SPEED_LIMIT;
+
+            if (data.elements && data.elements.length > 0) {
+                const tags = data.elements[0].tags;
                 
-                if (limit && !isNaN(limit)) {
-                    console.log(`🛣️ [Ola Maps] Speed limit for (${lat.toFixed(4)}, ${lng.toFixed(4)}): ${limit} km/h`);
-                    
-                    // Cache the result
-                    this.cache.set(cacheKey, {
-                        speedLimit: limit,
-                        expiresAt: Date.now() + CACHE_TTL_MS
-                    });
-                    
-                    return limit;
+                // 1. Check if the road has an explicit maxspeed tag
+                if (tags.maxspeed) {
+                    const parsedSpeed = parseInt(tags.maxspeed, 10);
+                    if (!isNaN(parsedSpeed)) {
+                        finalSpeedLimit = parsedSpeed;
+                    }
+                } 
+                // 2. If no explicit speed, guess based on the type of road (highway tag)
+                else if (tags.highway) {
+                    const roadType = tags.highway;
+                    if (ROAD_TYPE_SPEEDS[roadType]) {
+                        finalSpeedLimit = ROAD_TYPE_SPEEDS[roadType];
+                    }
                 }
             }
-            
-            console.log(`🛣️ [Ola Maps] No specific limit found. Using default: ${DEFAULT_SPEED_LIMIT} km/h`);
-            return DEFAULT_SPEED_LIMIT;
+
+            // Cache the result
+            this.cache.set(cacheKey, {
+                speedLimit: finalSpeedLimit,
+                expiresAt: Date.now() + CACHE_TTL_MS
+            });
+
+            return finalSpeedLimit;
 
         } catch (err) {
-            if (err.name !== 'TimeoutError') {
-                console.warn(`⚠️ Ola Maps fetch failed: ${err.message}`);
-            }
             return DEFAULT_SPEED_LIMIT;
         }
     }
