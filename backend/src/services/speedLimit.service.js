@@ -2,23 +2,28 @@
  * Speed Limit Service for TrackNGo
  *
  * Fetches the real road speed limit for a given GPS coordinate
- * using the Google Maps Roads API (speedLimits endpoint).
+ * using the OpenStreetMap (OSM) Overpass API. (Free, no API key needed).
  *
- * ONLY called for Mobile GPS buses (bus_id contains 'MOBILE')
- * to conserve API quota.
- *
- * Falls back to DEFAULT_SPEED_LIMIT (40 km/h) if:
- *  - API key is not configured
- *  - API call fails or times out
- *  - No speed limit data is returned for that road
+ * ONLY called for Mobile GPS buses to conserve external requests.
  */
 
 const DEFAULT_SPEED_LIMIT = 40; // km/h fallback
 const CACHE_TTL_MS = 60 * 1000; // Cache speed limits for 60 seconds per location
 
+// Approximate speed limits for Indian roads if 'maxspeed' tag is missing in OSM
+const ROAD_TYPE_SPEEDS = {
+    'motorway': 100,
+    'trunk': 80,
+    'primary': 60,
+    'secondary': 50,
+    'tertiary': 40,
+    'residential': 30,
+    'unclassified': 40,
+    'living_street': 20
+};
+
 class SpeedLimitService {
     constructor() {
-        this.apiKey = process.env.GOOGLE_MAPS_API_KEY || null;
         this.cache = new Map(); // "lat_lng_rounded" -> { speedLimit, expiresAt }
     }
 
@@ -31,11 +36,6 @@ class SpeedLimitService {
      * @returns {Promise<number>} Speed limit in km/h
      */
     async getSpeedLimit(lat, lng) {
-        if (!this.apiKey || this.apiKey === 'YOUR_API_KEY_HERE') {
-            // No API key configured — use default
-            return DEFAULT_SPEED_LIMIT;
-        }
-
         // Round to 4 decimal places (~11m precision) for cache key
         const cacheKey = `${lat.toFixed(4)}_${lng.toFixed(4)}`;
         const cached = this.cache.get(cacheKey);
@@ -45,57 +45,64 @@ class SpeedLimitService {
         }
 
         try {
-            const url = `https://roads.googleapis.com/v1/speedLimits?path=${lat},${lng}&key=${this.apiKey}`;
+            // Overpass QL Query: Find roads within 30 meters of the coordinates
+            const query = `[out:json][timeout:3];way(around:30,${lat},${lng})["highway"];out tags limit 1;`;
+            const url = `https://overpass-api.de/api/interpreter?data=${encodeURIComponent(query)}`;
 
-            // Use native fetch (Node 18+) or fallback
             const response = await fetch(url, {
-                signal: AbortSignal.timeout(3000) // 3 second timeout to not block GPS updates
+                headers: {
+                    'User-Agent': 'TrackNGo-UniversityProject/1.0'
+                },
+                signal: AbortSignal.timeout(4000) // 4 second timeout
             });
 
             if (!response.ok) {
-                console.warn(`⚠️ Roads API returned ${response.status}. Using default speed limit.`);
+                console.warn(`⚠️ Overpass API returned ${response.status}. Using default speed limit.`);
                 return DEFAULT_SPEED_LIMIT;
             }
 
             const data = await response.json();
+            let finalSpeedLimit = DEFAULT_SPEED_LIMIT;
 
-            // Extract speed limit from response
-            // Response: { speedLimits: [{ placeId, speedLimit, units }] }
-            if (data.speedLimits && data.speedLimits.length > 0) {
-                let speedLimitKmh = data.speedLimits[0].speedLimit;
-
-                // Convert MPH to KMH if needed (Google returns MPH for US roads)
-                if (data.speedLimits[0].units === 'MPH') {
-                    speedLimitKmh = Math.round(speedLimitKmh * 1.60934);
+            if (data.elements && data.elements.length > 0) {
+                const tags = data.elements[0].tags;
+                
+                // 1. Check if the road has an explicit maxspeed tag
+                if (tags.maxspeed) {
+                    const parsedSpeed = parseInt(tags.maxspeed, 10);
+                    if (!isNaN(parsedSpeed)) {
+                        finalSpeedLimit = parsedSpeed;
+                        console.log(`🛣️ [OSM] Found explicit maxspeed: ${finalSpeedLimit} km/h for (${lat.toFixed(4)}, ${lng.toFixed(4)})`);
+                    }
+                } 
+                // 2. If no explicit speed, guess based on the type of road (highway tag)
+                else if (tags.highway) {
+                    const roadType = tags.highway;
+                    if (ROAD_TYPE_SPEEDS[roadType]) {
+                        finalSpeedLimit = ROAD_TYPE_SPEEDS[roadType];
+                        console.log(`🛣️ [OSM] Inferred from road type '${roadType}': ${finalSpeedLimit} km/h for (${lat.toFixed(4)}, ${lng.toFixed(4)})`);
+                    } else {
+                        console.log(`🛣️ [OSM] Unknown road type '${roadType}'. Using default: ${DEFAULT_SPEED_LIMIT} km/h`);
+                    }
                 }
-
-                // Cache the result
-                this.cache.set(cacheKey, {
-                    speedLimit: speedLimitKmh,
-                    expiresAt: Date.now() + CACHE_TTL_MS
-                });
-
-                console.log(`🛣️ Speed limit fetched for (${lat.toFixed(4)}, ${lng.toFixed(4)}): ${speedLimitKmh} km/h`);
-                return speedLimitKmh;
+            } else {
+                console.log(`🛣️ [OSM] No roads found near (${lat.toFixed(4)}, ${lng.toFixed(4)}). Using default.`);
             }
 
-            // No data returned — use default
-            return DEFAULT_SPEED_LIMIT;
+            // Cache the result
+            this.cache.set(cacheKey, {
+                speedLimit: finalSpeedLimit,
+                expiresAt: Date.now() + CACHE_TTL_MS
+            });
+
+            return finalSpeedLimit;
 
         } catch (err) {
-            // Timeout or network error — use default silently
             if (err.name !== 'TimeoutError') {
-                console.warn(`⚠️ Speed limit fetch failed: ${err.message}`);
+                console.warn(`⚠️ OSM Speed limit fetch failed: ${err.message}`);
             }
             return DEFAULT_SPEED_LIMIT;
         }
-    }
-
-    /**
-     * Check if the API key is configured and active
-     */
-    isConfigured() {
-        return !!(this.apiKey && this.apiKey !== 'YOUR_API_KEY_HERE');
     }
 }
 
