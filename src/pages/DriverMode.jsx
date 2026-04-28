@@ -15,6 +15,7 @@ function DriverMode() {
     const [safetyScore, setSafetyScore] = useState(100);
     const [violation, setViolation] = useState(null);
     const [speedLimit, setSpeedLimit] = useState(40); // Current road speed limit (from Roads API)
+    const [specialZone, setSpecialZone] = useState(null); // School/Hospital zones
     const lastPosRef = useRef(null); // To calculate manual speed if GPS speed is null
 
     const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080';
@@ -176,6 +177,7 @@ function DriverMode() {
                 if (data.eta) setEta(data.eta);
                 if (data.safety_score !== undefined) setSafetyScore(data.safety_score);
                 if (data.speed_limit) setSpeedLimit(data.speed_limit); // Update road speed limit
+                setSpecialZone(data.special_zone || null); // Update smart zones
 
                 if (data.violations && data.violations.length > 0) {
                     setViolation(data.violations[0]);
@@ -299,6 +301,19 @@ function DriverMode() {
                                 🛣️ {speedLimit} km/h
                             </span>
                         </div>
+
+                        {specialZone && (
+                            <div className={`mt-2 p-3 rounded-lg border-2 font-bold flex items-center justify-center gap-2 animate-pulse ${
+                                specialZone === 'school' ? 'bg-yellow-100 border-yellow-500 text-yellow-800' :
+                                'bg-red-50 border-red-500 text-red-800'
+                            }`}>
+                                <span className="text-2xl">{specialZone === 'school' ? '🚸' : '🏥'}</span>
+                                <div>
+                                    <div className="uppercase tracking-wider">{specialZone === 'school' ? 'School Zone' : 'Hospital Zone'}</div>
+                                    <div className="text-xs font-semibold opacity-80">Speed Limit Reduced to {speedLimit} km/h</div>
+                                </div>
+                            </div>
+                        )}
 
                         {(nextStop || eta) && (
                             <div className="flex justify-between items-center pt-2 bg-blue-50 p-2 rounded mt-2">

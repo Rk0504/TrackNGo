@@ -29,12 +29,12 @@ class SpeedLimitService {
     }
 
     /**
-     * Get the road speed limit for a given coordinate.
+     * Get the road speed limit and zone type for a given coordinate.
      * Uses a 60-second cache to avoid redundant API calls.
      *
      * @param {number} lat - Latitude
      * @param {number} lng - Longitude
-     * @returns {Promise<number>} Speed limit in km/h
+     * @returns {Promise<{speedLimit: number, zone: string|null}>}
      */
     async getSpeedLimit(lat, lng) {
         // Round to 4 decimal places (~11m precision) for cache key
@@ -42,57 +42,78 @@ class SpeedLimitService {
         const cached = this.cache.get(cacheKey);
 
         if (cached && cached.expiresAt > Date.now()) {
-            return cached.speedLimit;
+            return { speedLimit: cached.speedLimit, zone: cached.zone };
         }
 
         try {
-            // Overpass QL Query: Find roads within 30 meters of the coordinates
-            const query = `[out:json][timeout:3];way(around:30,${lat},${lng})["highway"];out tags 1;`;
+            // Overpass QL Query: Find roads within 30m AND amenities (schools/hospitals) within 100m
+            const query = `[out:json][timeout:3];(way(around:30,${lat},${lng})["highway"];nwr(around:100,${lat},${lng})["amenity"];);out tags;`;
             const url = `https://overpass-api.de/api/interpreter?data=${encodeURIComponent(query)}`;
 
             const response = await fetch(url, {
                 headers: {
                     'User-Agent': 'TrackNGo-UniversityProject/1.0'
                 },
-                signal: AbortSignal.timeout(4000) // 4 second timeout
+                signal: AbortSignal.timeout(4000)
             });
 
             if (!response.ok) {
-                return DEFAULT_SPEED_LIMIT;
+                return { speedLimit: DEFAULT_SPEED_LIMIT, zone: null };
             }
 
             const data = await response.json();
-            let finalSpeedLimit = DEFAULT_SPEED_LIMIT;
+            
+            let roadSpeedLimit = DEFAULT_SPEED_LIMIT;
+            let detectedZone = null;
 
             if (data.elements && data.elements.length > 0) {
-                const tags = data.elements[0].tags;
-                
-                // 1. Check if the road has an explicit maxspeed tag
-                if (tags.maxspeed) {
-                    const parsedSpeed = parseInt(tags.maxspeed, 10);
-                    if (!isNaN(parsedSpeed)) {
-                        finalSpeedLimit = parsedSpeed;
-                    }
-                } 
-                // 2. If no explicit speed, guess based on the type of road (highway tag)
-                else if (tags.highway) {
-                    const roadType = tags.highway;
-                    if (ROAD_TYPE_SPEEDS[roadType]) {
-                        finalSpeedLimit = ROAD_TYPE_SPEEDS[roadType];
+                // 1. Scan for Special Zones first (Schools / Hospitals)
+                for (const element of data.elements) {
+                    if (element.tags && element.tags.amenity) {
+                        const amenity = element.tags.amenity.toLowerCase();
+                        if (['school', 'college', 'university', 'kindergarten'].includes(amenity)) {
+                            detectedZone = 'school';
+                            break; // School zone takes highest priority
+                        } else if (['hospital', 'clinic'].includes(amenity)) {
+                            detectedZone = 'hospital';
+                        }
                     }
                 }
+
+                // 2. Scan for regular road speed if no special zone overrides it
+                for (const element of data.elements) {
+                    if (element.tags && element.tags.highway) {
+                        const tags = element.tags;
+                        if (tags.maxspeed) {
+                            const parsedSpeed = parseInt(tags.maxspeed, 10);
+                            if (!isNaN(parsedSpeed)) roadSpeedLimit = parsedSpeed;
+                        } else if (ROAD_TYPE_SPEEDS[tags.highway]) {
+                            roadSpeedLimit = ROAD_TYPE_SPEEDS[tags.highway];
+                        }
+                        break; // Stop looking after finding the nearest road
+                    }
+                }
+            }
+
+            // Apply Zone Overrides (School zones are strictly 20 km/h, Hospitals 30 km/h)
+            let finalSpeedLimit = roadSpeedLimit;
+            if (detectedZone === 'school') {
+                finalSpeedLimit = 20;
+            } else if (detectedZone === 'hospital') {
+                finalSpeedLimit = 30;
             }
 
             // Cache the result
             this.cache.set(cacheKey, {
                 speedLimit: finalSpeedLimit,
+                zone: detectedZone,
                 expiresAt: Date.now() + CACHE_TTL_MS
             });
 
-            return finalSpeedLimit;
+            return { speedLimit: finalSpeedLimit, zone: detectedZone };
 
         } catch (err) {
-            return DEFAULT_SPEED_LIMIT;
+            return { speedLimit: DEFAULT_SPEED_LIMIT, zone: null };
         }
     }
 }

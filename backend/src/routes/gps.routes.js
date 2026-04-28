@@ -62,18 +62,20 @@ router.post('/update', async (req, res) => {
       });
     }
 
-    // Only fetch real road speed limit for MOBILE GPS buses (to conserve API quota)
-    // If the frontend already calculated it (to bypass Render IP blocks), use that.
+    // Only fetch real road speed limit and zone for MOBILE GPS buses
     const isMobileBus = validation.data.bus_id && String(validation.data.bus_id).toUpperCase().includes('MOBILE');
     let roadSpeedLimit = validation.data.speed_limit || null;
+    let specialZone = null;
 
     if (isMobileBus && !roadSpeedLimit) {
       try {
         const speedLimitService = require('../services/speedLimit.service');
-        roadSpeedLimit = await speedLimitService.getSpeedLimit(
+        const speedData = await speedLimitService.getSpeedLimit(
           validation.data.lat,
           validation.data.lng
         );
+        roadSpeedLimit = speedData.speedLimit;
+        specialZone = speedData.zone;
       } catch (slErr) {
         console.warn('⚠️  Speed limit fetch failed, using default:', slErr.message);
       }
@@ -181,6 +183,7 @@ router.post('/update', async (req, res) => {
       safety_score: updateResult.bus.safety_score,
       violations: updateResult.bus.violations || [],
       speed_limit: updateResult.bus.speed_limit || 40,
+      special_zone: specialZone, // Added special zone for UI warning
       processingTime: `${processingTime}ms`
     });
 
