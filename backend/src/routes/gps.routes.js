@@ -63,11 +63,11 @@ router.post('/update', async (req, res) => {
     }
 
     // Only fetch real road speed limit for MOBILE GPS buses (to conserve API quota)
-    // Simulated buses continue using the default 40 km/h limit
+    // If the frontend already calculated it (to bypass Render IP blocks), use that.
     const isMobileBus = validation.data.bus_id && String(validation.data.bus_id).toUpperCase().includes('MOBILE');
-    let roadSpeedLimit = null; // null means use default (40 km/h)
+    let roadSpeedLimit = validation.data.speed_limit || null;
 
-    if (isMobileBus) {
+    if (isMobileBus && !roadSpeedLimit) {
       try {
         const speedLimitService = require('../services/speedLimit.service');
         roadSpeedLimit = await speedLimitService.getSpeedLimit(
