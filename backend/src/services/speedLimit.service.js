@@ -46,7 +46,7 @@ class SpeedLimitService {
 
         try {
             // Overpass QL Query: Find roads within 30 meters of the coordinates
-            const query = `[out:json][timeout:3];way(around:30,${lat},${lng})["highway"];out tags limit 1;`;
+            const query = `[out:json][timeout:3];way(around:30,${lat},${lng})["highway"];out tags 1;`;
             const url = `https://overpass-api.de/api/interpreter?data=${encodeURIComponent(query)}`;
 
             const response = await fetch(url, {
