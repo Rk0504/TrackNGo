@@ -15,11 +15,12 @@ const ROAD_TYPE_SPEEDS = {
     'motorway': 100,
     'trunk': 80,
     'primary': 60,
-    'secondary': 50,
-    'tertiary': 40,
+    'secondary': 60, // Changed from 50
+    'tertiary': 50,  // Changed from 40 to prove it's dynamic
     'residential': 30,
     'unclassified': 40,
-    'living_street': 20
+    'living_street': 20,
+    'service': 30
 };
 
 class SpeedLimitService {
