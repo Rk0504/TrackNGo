@@ -14,6 +14,7 @@ function DriverMode() {
 
     const [safetyScore, setSafetyScore] = useState(100);
     const [violation, setViolation] = useState(null);
+    const [speedLimit, setSpeedLimit] = useState(40); // Current road speed limit (from Roads API)
     const lastPosRef = useRef(null); // To calculate manual speed if GPS speed is null
 
     const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080';
@@ -174,6 +175,7 @@ function DriverMode() {
                 if (data.nextStop) setNextStop(data.nextStop);
                 if (data.eta) setEta(data.eta);
                 if (data.safety_score !== undefined) setSafetyScore(data.safety_score);
+                if (data.speed_limit) setSpeedLimit(data.speed_limit); // Update road speed limit
 
                 if (data.violations && data.violations.length > 0) {
                     setViolation(data.violations[0]);
@@ -287,7 +289,15 @@ function DriverMode() {
                         </div>
                         <div className="flex justify-between items-center border-b pb-2">
                             <span className="text-gray-500">Speed:</span>
-                            <span className="font-bold text-xl">{Math.round(location.speed)} km/h</span>
+                            <span className={`font-bold text-xl ${location.speed > speedLimit ? 'text-red-600' : 'text-gray-800'}`}>
+                                {Math.round(location.speed)} km/h
+                            </span>
+                        </div>
+                        <div className="flex justify-between items-center py-1">
+                            <span className="text-gray-500 text-sm">Road Speed Limit:</span>
+                            <span className={`font-bold text-sm px-2 py-0.5 rounded ${location.speed > speedLimit ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}>
+                                🛣️ {speedLimit} km/h
+                            </span>
                         </div>
 
                         {(nextStop || eta) && (

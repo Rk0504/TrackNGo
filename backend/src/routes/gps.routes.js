@@ -62,17 +62,36 @@ router.post('/update', async (req, res) => {
       });
     }
 
+    // Only fetch real road speed limit for MOBILE GPS buses (to conserve API quota)
+    // Simulated buses continue using the default 40 km/h limit
+    const isMobileBus = validation.data.bus_id && String(validation.data.bus_id).toUpperCase().includes('MOBILE');
+    let roadSpeedLimit = null; // null means use default (40 km/h)
+
+    if (isMobileBus) {
+      try {
+        const speedLimitService = require('../services/speedLimit.service');
+        roadSpeedLimit = await speedLimitService.getSpeedLimit(
+          validation.data.lat,
+          validation.data.lng
+        );
+      } catch (slErr) {
+        console.warn('⚠️  Speed limit fetch failed, using default:', slErr.message);
+      }
+    }
+
     // Calculate Safety Score
     const safetyResult = safetyService.processSafetyScore(
       validation.data.bus_id,
       validation.data.speed || 0,
       validation.data.timestamp,
-      validation.data.timestamp_ms // Pass high-precision timestamp
+      validation.data.timestamp_ms, // Pass high-precision timestamp
+      roadSpeedLimit               // Pass road speed limit (null = use default 40)
     );
 
     // Attach score to bus data
     validation.data.safety_score = safetyResult.score;
     validation.data.violations = safetyResult.violations;
+    if (roadSpeedLimit) validation.data.speed_limit = roadSpeedLimit;
 
     // Store GPS update
     const storage = getStorage();
@@ -161,6 +180,7 @@ router.post('/update', async (req, res) => {
       nextStop: updateResult.bus.nextStop || null,
       safety_score: updateResult.bus.safety_score,
       violations: updateResult.bus.violations || [],
+      speed_limit: updateResult.bus.speed_limit || 40,
       processingTime: `${processingTime}ms`
     });
 

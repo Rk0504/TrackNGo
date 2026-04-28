@@ -1,10 +1,13 @@
 /**
  * Safety Service for TrackNGo
- * 
+ *
  * Calculates safety scores based on driving behavior:
- * - Overspeeding: -3 points
- * - Harsh Braking: -5 points
- * - Sudden Acceleration: -10 points
+ * - Overspeeding: -2 points (after 2 seconds over limit)
+ * - Harsh Braking: -3 points (G-Force < -0.265g in 3s window)
+ * - Sudden Acceleration: -3 points (G-Force > +0.22g in 3s window)
+ *
+ * For MOBILE buses: uses real road speed limit from Google Roads API.
+ * For simulated buses: uses default 40 km/h limit.
  */
 
 class SafetyService {
@@ -32,12 +35,16 @@ class SafetyService {
 
     /**
      * Process GPS update and calculate safety score
-     * @param {string} busId 
+     * @param {string} busId
      * @param {number} currentSpeed (km/h)
      * @param {number} timestamp (seconds)
-     * @returns {Object} { score, violations }
+     * @param {number|null} timestampMs - High precision timestamp in ms
+     * @param {number|null} roadSpeedLimit - Dynamic speed limit from Roads API (null = use default 40 km/h)
+     * @returns {Object} { score, violations, speedLimit }
      */
-    processSafetyScore(busId, currentSpeed, timestamp, timestampMs = null) {
+    processSafetyScore(busId, currentSpeed, timestamp, timestampMs = null, roadSpeedLimit = null) {
+        // Use the dynamic road speed limit if provided, otherwise fall back to default
+        const speedLimit = (roadSpeedLimit && roadSpeedLimit > 0) ? roadSpeedLimit : this.SPEED_LIMIT;
         // Initialize state if new bus
         if (!this.busStates.has(busId)) {
             this.busStates.set(busId, {
@@ -64,23 +71,19 @@ class SafetyService {
         const historyWindowMs = 5000;
         state.speedHistory = state.speedHistory.filter(entry => (nowMs - entry.timeMs) <= historyWindowMs);
 
-        // 1. Check Overspeeding (Speed > 40 km/h for > 2 seconds)
-        // Rule: If speed > 40 km/h for more than 2 seconds, 2 points deducted.
-        if (currentSpeed > 40) {
+        // 1. Check Overspeeding (Speed > road speed limit for > 2 seconds)
+        // For MOBILE buses: speedLimit comes from Google Roads API
+        // For simulated buses: speedLimit is the default 40 km/h
+        if (currentSpeed > speedLimit) {
             if (!state.overspeedStartTime) {
                 state.overspeedStartTime = nowMs;
             } else {
                 const duration = nowMs - state.overspeedStartTime;
                 if (duration > 2000) { // > 2 seconds
-                    // Deduct points
-                    // We add a cooldown or valid check to ensure we don't deduct continuously?
-                    // "2 points will be deducted". Simple interpretation: Deduct once per "event" of exceeding 2s?
-                    // Or every 2s block? Let's treat it as: Once we cross 2s mark, deduct, and reset timer to penalize again if it continues?
-                    // Let's reset timer to penalize every 2s of overspeeding.
                     newScore -= 2;
                     violations.push('Overspeeding');
-                    console.log(`⚠️ Violation [${busId}]: Overspeeding (>40km/h for 2s)`);
-                    state.overspeedStartTime = nowMs; // Reset timer to count next 2s
+                    console.log(`⚠️ Violation [${busId}]: Overspeeding (${currentSpeed} km/h > ${speedLimit} km/h limit for 2s)`);
+                    state.overspeedStartTime = nowMs; // Reset timer to count next 2s block
                 }
             }
         } else {
