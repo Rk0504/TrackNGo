@@ -57,6 +57,25 @@ class StorageService {
         return { success: false, reason: 'stale_data' };
       }
 
+      // Delay detection logic (0 km/h for 5 minutes)
+      const parsedSpeed = Math.max(0, parseFloat(speed) || 0);
+      let stoppedSince = existingBus?.stoppedSince || null;
+      let hasDelayProblem = existingBus?.hasDelayProblem || false;
+
+      if (parsedSpeed === 0) {
+        if (!stoppedSince) {
+          // Bus just stopped, record the time
+          stoppedSince = Date.now();
+        } else if (Date.now() - stoppedSince >= 5 * 60 * 1000) {
+          // Bus has been stopped for 5+ minutes
+          hasDelayProblem = true;
+        }
+      } else {
+        // Bus is moving, reset delay trackers
+        stoppedSince = null;
+        hasDelayProblem = false;
+      }
+
       // Create updated bus object
       const updatedBus = {
         ...(existingBus || {}), // Keep existing fields
@@ -70,7 +89,9 @@ class StorageService {
         lastUpdate: new Date().toISOString(),
         // Only update safety score if provided, else keep existing or default to 100
         safety_score: safety_score !== undefined ? safety_score : (existingBus?.safety_score || 100),
-        violations: violations || []
+        violations: violations || [],
+        stoppedSince, // Track when the bus stopped
+        hasDelayProblem // Flag for 5-minute delay
       };
 
       // Store in memory

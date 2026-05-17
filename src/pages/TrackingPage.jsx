@@ -142,6 +142,14 @@ function TrackingPage() {
                       </div>
                     </div>
 
+                    {/* Delay Warning Banner */}
+                    {bus.hasDelayProblem && (
+                      <div className="bg-red-50 border border-red-200 rounded-lg p-2 mb-2 flex items-center space-x-2 text-xs animate-pulse">
+                        <span className="text-lg">⚠️</span>
+                        <span className="text-red-700 font-bold leading-tight">The bus has some problem to reach you So, please wait</span>
+                      </div>
+                    )}
+
                     {/* Next Stop & ETA */}
                     {bus.next_stop && (
                       <div className="bg-gray-50 rounded-lg p-2 mb-2 flex justify-between items-center text-xs">

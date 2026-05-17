@@ -160,6 +160,14 @@ function Sidebar() {
 
                         {/* Bus Details */}
                         <div className="mt-3 pt-3 border-t border-gray-100 space-y-2">
+                          {/* Delay Warning Banner */}
+                          {bus.hasDelayProblem && (
+                            <div className="bg-red-50 border border-red-200 rounded-lg p-2 flex items-center space-x-2 text-xs animate-pulse">
+                              <span className="text-lg">⚠️</span>
+                              <span className="text-red-700 font-bold leading-tight">The bus has some problem to reach you So, please wait</span>
+                            </div>
+                          )}
+                          
                           {/* Next Stop Row */}
                           {bus.next_stop && (
                             <div

@@ -460,6 +460,7 @@ class WebSocketService {
         safety_score: message.data.safety_score, // Added safety_score
         violations: message.data.violations || [], // Added violations
         status: message.data.status, // Added status
+        hasDelayProblem: message.data.hasDelayProblem || false, // 5-minute delay flag
         timestamp: message.data.timestamp,
         lastUpdate: message.data.lastUpdate
       },
