@@ -57,12 +57,12 @@ class StorageService {
         return { success: false, reason: 'stale_data' };
       }
 
-      // Delay detection logic (0 km/h for 5 minutes)
+      // Delay detection logic (0 to 5 km/h for 5 minutes)
       const parsedSpeed = Math.max(0, parseFloat(speed) || 0);
       let stoppedSince = existingBus?.stoppedSince || null;
       let hasDelayProblem = existingBus?.hasDelayProblem || false;
 
-      if (parsedSpeed === 0) {
+      if (parsedSpeed <= 5) {
         if (!stoppedSince) {
           // Bus just stopped, record the time
           stoppedSince = Date.now();
